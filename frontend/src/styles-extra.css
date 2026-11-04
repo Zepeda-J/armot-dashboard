@@ -1,0 +1,42 @@
+/* Estilos de las pestañas conectadas a Supabase (Coordinadores, Administración, Facturación, Acuerdos). */
+.duo { grid-template-columns: minmax(0, calc(var(--a, 1) * 1fr)) minmax(0, calc(var(--b, 1) * 1fr)); }
+@media (max-width: 900px) { .duo { grid-template-columns: 1fr; } }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.toolbar-sp { flex: 1; }
+.resumen-txt { font-size: 0.82rem; color: var(--muted); display: flex; align-items: center; flex-wrap: wrap; }
+.nota { padding: 8px 12px; border-radius: 10px; background: var(--tint); border: 1px solid var(--border); font-size: 0.85rem; cursor: pointer; }
+
+.estatus-tag { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); border: 1px solid color-mix(in srgb, var(--c) 40%, transparent); }
+.tbl a { color: var(--blue); text-decoration: none; }
+.tbl a:hover { text-decoration: underline; }
+.tbl input[type="checkbox"] { cursor: pointer; }
+
+.modal:has(.form-modal) { max-width: 680px; }
+.form-modal { display: grid; gap: 14px; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } }
+.form-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* Tarjetas de credenciales */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
+.pcard { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); display: grid; gap: 10px; align-content: start; min-width: 0; }
+.pcard-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.pcard-body { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; align-items: center; }
+.pcard-nombre { font-weight: 700; font-size: 1rem; line-height: 1.2; margin-bottom: 4px; }
+.pcard-linea { font-size: 0.82rem; color: var(--muted); }
+.pcard-linea code { background: var(--card-2); padding: 1px 6px; border-radius: 6px; color: var(--text); }
+.pcard-datos { display: grid; gap: 3px; font-size: 0.8rem; border-top: 1px solid var(--border); padding-top: 10px; overflow-wrap: anywhere; }
+.pcard-datos a { color: var(--blue); text-decoration: none; }
+.pcard-acciones { display: flex; gap: 8px; }
+.pcard-acciones .btn { flex: 1; padding: 6px 8px; font-size: 0.8rem; }
+
+.avatar { width: 84px; height: 84px; border-radius: 14px; object-fit: cover; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 1.7rem; }
+.id-tag { font-family: "Courier New", monospace; font-weight: 700; font-size: 0.8rem; padding: 3px 8px; border-radius: 6px; background: var(--card-2); border: 1px solid var(--border); }
+.badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid transparent; }
+.badge-activo { background: #dcfce7; color: #166534; border-color: #86efac; }
+.badge-inactivo { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+.badge-pendiente { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
+:root[data-theme="dark"] .badge-activo { background: rgba(16, 185, 129, 0.18); color: #6ee7b7; border-color: rgba(16, 185, 129, 0.4); }
+:root[data-theme="dark"] .badge-inactivo { background: rgba(239, 68, 68, 0.18); color: #fca5a5; border-color: rgba(239, 68, 68, 0.4); }
+:root[data-theme="dark"] .badge-pendiente { background: rgba(245, 158, 11, 0.18); color: #fcd34d; border-color: rgba(245, 158, 11, 0.4); }

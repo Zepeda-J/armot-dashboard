@@ -1,0 +1,30 @@
+# Blueprint de Render (opcional): New + > Blueprint, o crea el Web Service a mano con estos mismos valores.
+services:
+  - type: web
+    name: armot-backend
+    runtime: node
+    rootDir: backend          # quita esta línea si el repo contiene solo el backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DATABASE_URL       # cadena de conexión de Supabase (Session pooler)
+        sync: false
+      - key: FRONTEND_ORIGIN    # URL del frontend en Pages, sin "/" final ni ruta
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: AI_PROVIDER
+        sync: false
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_MODEL
+        sync: false
+      - key: GOOGLE_DRIVE_ROOT_FOLDER_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        value: /etc/secrets/service-account.json   # súbelo en Environment > Secret Files
