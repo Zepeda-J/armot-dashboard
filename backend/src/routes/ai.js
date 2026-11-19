@@ -2,6 +2,7 @@ const express = require("express");
 const { query } = require("../db/supabase");
 const { requireAuth, requireRole } = require("../middleware/auth");
 const { valoresDisponibles, resumenPorDimension, interpretarSalida } = require("../ai/graficas");
+const { contextoSecciones } = require("../ai/secciones");
 
 const num = (v) => {
   const n = Number(v);
@@ -13,6 +14,8 @@ const router = express.Router();
 const INSTRUCCIONES_SISTEMA =
   "Eres un asistente analítico experto de la empresa Armot. Tu objetivo único es responder " +
   "preguntas del usuario basándote estrictamente en el resumen de métricas y las tablas provistas. " +
+  "El contexto cubre TODAS las pestañas del dashboard: Resumen Global y Contratos (servicios), Coordinadores, " +
+  "Administración (con su histórico laboral), Seguimiento de facturación y Acuerdos. Si algo no aparece en el contexto, dilo con claridad. " +
   "Sé ejecutivo, claro, preciso y responde siempre en español. No inventes datos fuera del contexto dado.";
 
 const FORMATO_SALIDA = `Responde SOLO con un objeto JSON válido (sin texto fuera del JSON y sin bloques de código) con esta forma:
@@ -31,6 +34,7 @@ Reglas para "graficas":
    "top": 10,                            // opcional, 1 a 20
    "orden": "desc" | "asc"}              // opcional
 - Usa "pastel" solo para proporciones de un total con pocas categorías; "linea" solo con dimension "ejercicio_fiscal"; "barras_horizontales" cuando los nombres son largos.
+- Las gráficas SOLO pueden construirse con los datos de contratos/servicios (dimensiones y métricas de arriba). Para Coordinadores, Administración, facturación o acuerdos responde con texto y tablas y deja "graficas": [].
 - En "respuesta" comenta lo que muestran las gráficas usando las cifras de las TABLAS POR DIMENSIÓN, sin repetir toda la tabla.`;
 
 async function construirContexto(pregunta, historial, filas) {
@@ -45,6 +49,8 @@ async function construirContexto(pregunta, historial, filas) {
     ? filas.filter((f) => palabrasClave.some((p) => Object.values(f).join(" ").toLowerCase().includes(p))).slice(0, 20)
     : [];
   if (!muestra.length) muestra = filas.slice(0, 15);
+
+  const otrasPestanas = await contextoSecciones(pregunta);
 
   const conversacion = historial.length
     ? `\n--- CONVERSACIÓN PREVIA (para entender preguntas de seguimiento) ---\n${historial.map((m) => `${m.role === "user" ? "Usuario" : "Asistente"}: ${m.content}`).join("\n")}\n`
@@ -78,7 +84,10 @@ ${resumenPorDimension(filas, "empresa")}
 POR ESTATUS:
 ${resumenPorDimension(filas, "estatus")}
 
---- MUESTRA DE FILAS ---
+--- OTRAS PESTAÑAS (Coordinadores, Administración, Facturación, Acuerdos) ---
+${otrasPestanas}
+
+--- MUESTRA DE FILAS DE CONTRATOS/SERVICIOS ---
 ${muestra.map((f) => JSON.stringify(f)).join("\n") || "(sin filas disponibles)"}
 ${conversacion}
 --- PREGUNTA A RESPONDER ---

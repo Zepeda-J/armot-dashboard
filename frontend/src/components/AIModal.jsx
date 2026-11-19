@@ -7,6 +7,9 @@ const SUGERENCIAS = [
   "Gráfica del monto máximo con IVA por dependencia",
   "Distribución de contratos por estatus",
   "¿Qué estado concentra más unidades? Muéstrame un comparativo",
+  "¿Cuántas facturas vencidas hay y por qué monto?",
+  "¿Qué acuerdos vencen en los próximos 90 días?",
+  "¿Cuántos coordinadores activos hay y quiénes se dieron de baja?",
 ];
 
 export default function AIModal({ mensajes, pensando, onEnviar, onNueva, onClose }) {
@@ -54,7 +57,7 @@ export default function AIModal({ mensajes, pensando, onEnviar, onNueva, onClose
         <div className="ia-hilo">
           {mensajes.length === 0 && (
             <div className="ia-vacio">
-              <p>Pregúntame sobre el reporte de servicios. Si pides una estadística o una gráfica, la verás aquí.</p>
+              <p>Pregúntame sobre cualquier pestaña: contratos, coordinadores, administración, facturación o acuerdos. Si pides una estadística o una gráfica de contratos, la verás aquí.</p>
               <div className="ia-sugs">
                 {SUGERENCIAS.map((s) => <button key={s} className="btn" onClick={() => onEnviar(s)} disabled={pensando}>{s}</button>)}
               </div>

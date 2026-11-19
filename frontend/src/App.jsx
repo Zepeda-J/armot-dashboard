@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Login from "./pages/Login";
 import AIAssistant from "./components/AIAssistant";
+import Jarvis from "./components/Jarvis";
 import ResumenGlobal from "./tabs/ResumenGlobal";
 import Contratos from "./tabs/Contratos";
 import Personal from "./tabs/Personal";
@@ -33,10 +34,18 @@ export default function App() {
   const soloLectura = sesion.rol === "personal";
   const puedeVerTodo = !PESTANAS_POR_ROL[sesion.rol];
 
+  function fijarTema(valor) {
+    aplicarTema(valor);
+    setTema(valor);
+  }
+
   function alternarTema() {
-    const siguiente = tema === "dark" ? "light" : "dark";
-    aplicarTema(siguiente);
-    setTema(siguiente);
+    fijarTema(tema === "dark" ? "light" : "dark");
+  }
+
+  function salir() {
+    cerrarSesion();
+    setSesion(null);
   }
 
   return (
@@ -50,7 +59,7 @@ export default function App() {
         {puedeVerTodo && <AIAssistant />}
         <div className="side-actions">
           <button className="btn btn-block" onClick={alternarTema}>{tema === "dark" ? "☀️ Tema claro" : "🌙 Tema oscuro"}</button>
-          <button className="btn btn-block" onClick={() => { cerrarSesion(); setSesion(null); }}>🚪 Cerrar sesión</button>
+          <button className="btn btn-block" onClick={salir}>🚪 Cerrar sesión</button>
         </div>
       </aside>
 
@@ -76,6 +85,17 @@ export default function App() {
         {actual === "facturacion" && <Tablero clave="facturacion" />}
         {actual === "acuerdos" && <Tablero clave="acuerdos" />}
       </main>
+
+      <Jarvis
+        pestanas={visibles}
+        actual={actual}
+        onNavegar={setActiva}
+        tema={tema}
+        onTema={fijarTema}
+        onLateral={setLateral}
+        onCerrarSesion={salir}
+        puedeIA={puedeVerTodo}
+      />
     </div>
   );
 }
