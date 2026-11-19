@@ -1,65 +1,86 @@
 const express = require("express");
 const { query } = require("../db/supabase");
 const { requireAuth, requireRole } = require("../middleware/auth");
+const { valoresDisponibles, resumenPorDimension, interpretarSalida } = require("../ai/graficas");
+
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
 
 const router = express.Router();
 
 const INSTRUCCIONES_SISTEMA =
   "Eres un asistente analítico experto de la empresa Armot. Tu objetivo único es responder " +
-  "preguntas del usuario basándote estrictamente en el resumen de métricas y la tabla provista. " +
+  "preguntas del usuario basándote estrictamente en el resumen de métricas y las tablas provistas. " +
   "Sé ejecutivo, claro, preciso y responde siempre en español. No inventes datos fuera del contexto dado.";
 
-async function construirContexto(pregunta) {
-  const resumen = (await query(`SELECT
-         COUNT(DISTINCT dependencia) AS dependencias_unicas,
-         COALESCE(SUM(unidades), 0) AS total_unidades,
-         COALESCE(SUM(operarios_min), 0) AS operarios_min_total,
-         COALESCE(SUM(operarios_max), 0) AS operarios_max_total,
-         COALESCE(SUM(monto_min_con_iva), 0) AS monto_min_con_iva_total,
-         COALESCE(SUM(monto_max_con_iva), 0) AS monto_max_con_iva_total
-       FROM servicios`)).rows[0];
+const FORMATO_SALIDA = `Responde SOLO con un objeto JSON válido (sin texto fuera del JSON y sin bloques de código) con esta forma:
+{"respuesta": "texto en español con formato Markdown (listas con guiones, **negritas**, tablas si ayudan)", "graficas": []}
 
-  // Igual que en el Streamlit original: si la pregunta trae palabras "de contenido"
-  // (más de 3 letras), filtra filas que las contengan; si no, manda una muestra general.
+Reglas para "graficas":
+- Es una lista (puede ir vacía). Máximo 3 gráficas.
+- Inclúyelas cuando el usuario pida una gráfica, gráfico, estadística, comparativo, distribución, ranking o tendencia, o cuando una visual ayude claramente. Si es una pregunta puntual, déjala vacía [].
+- NO escribas los valores de la gráfica: el sistema los calcula con datos reales a partir de tu especificación. Cada gráfica es:
+  {"tipo": "barras" | "barras_horizontales" | "linea" | "pastel",
+   "titulo": "título corto",
+   "dimension": "dependencia" | "estado" | "empresa" | "estatus" | "ejercicio_fiscal",
+   "metrica": "monto_max_con_iva" | "monto_min_con_iva" | "monto_max_sin_iva" | "monto_min_sin_iva" | "unidades" | "operarios_min" | "operarios_max" | "contratos",
+   "agregacion": "suma" | "promedio" | "maximo",
+   "filtros": {"estado": ["México"]},   // opcional; solo dimensiones de la lista y valores EXACTOS de VALORES DISPONIBLES
+   "top": 10,                            // opcional, 1 a 20
+   "orden": "desc" | "asc"}              // opcional
+- Usa "pastel" solo para proporciones de un total con pocas categorías; "linea" solo con dimension "ejercicio_fiscal"; "barras_horizontales" cuando los nombres son largos.
+- En "respuesta" comenta lo que muestran las gráficas usando las cifras de las TABLAS POR DIMENSIÓN, sin repetir toda la tabla.`;
+
+async function construirContexto(pregunta, historial, filas) {
+  const sumar = (k) => filas.reduce((a, f) => a + num(f[k]), 0);
+  const unicos = (k) => new Set(filas.map((f) => String(f[k] ?? "").trim()).filter(Boolean)).size;
+  const dinero = (n) => `$${n.toLocaleString("es-MX", { minimumFractionDigits: 2 })}`;
+  const disponibles = valoresDisponibles(filas);
+
+  // Igual que en el Streamlit original: palabras "de contenido" (más de 3 letras) filtran filas de muestra.
   const palabrasClave = (pregunta.match(/\S+/g) || []).map((p) => p.toLowerCase()).filter((p) => p.length > 3);
+  let muestra = palabrasClave.length
+    ? filas.filter((f) => palabrasClave.some((p) => Object.values(f).join(" ").toLowerCase().includes(p))).slice(0, 20)
+    : [];
+  if (!muestra.length) muestra = filas.slice(0, 15);
 
-  let filas;
-  let notaContexto;
-  if (palabrasClave.length) {
-    const todas = (await query("select * from servicios")).rows;
-    filas = todas
-      .filter((fila) =>
-        palabrasClave.some((p) => Object.values(fila).join(" ").toLowerCase().includes(p))
-      )
-      .slice(0, 25);
-    notaContexto = filas.length
-      ? "Nota: Se han extraído las filas del reporte que coinciden dinámicamente con la búsqueda del usuario."
-      : "Nota: No hubo coincidencias; se muestra una vista previa general.";
-    if (!filas.length) filas = (await query("select * from servicios limit 15")).rows;
-  } else {
-    filas = (await query("select * from servicios limit 15")).rows;
-    notaContexto = "Nota: Mostrando una vista previa general de las primeras filas del reporte debido a falta de palabras clave explícitas.";
-  }
-
-  const tablaTexto = filas.length
-    ? filas.map((f) => JSON.stringify(f)).join("\n")
-    : "(sin filas disponibles)";
+  const conversacion = historial.length
+    ? `\n--- CONVERSACIÓN PREVIA (para entender preguntas de seguimiento) ---\n${historial.map((m) => `${m.role === "user" ? "Usuario" : "Asistente"}: ${m.content}`).join("\n")}\n`
+    : "";
 
   return `--- INSTRUCCIONES DEL SISTEMA ---
 ${INSTRUCCIONES_SISTEMA}
 
+--- FORMATO DE SALIDA (OBLIGATORIO) ---
+${FORMATO_SALIDA}
+
 --- CONTEXTO DE DATOS DE LA EMPRESA ---
-- Número de Dependencias Únicas: ${resumen.dependencias_unicas}
-- Total de Unidades: ${resumen.total_unidades}
-- Elementos Mínimos de Seguridad: ${resumen.operarios_min_total}
-- Elementos Máximos de Seguridad: ${resumen.operarios_max_total}
-- Monto Mínimo con IVA Global: $${resumen.monto_min_con_iva_total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-- Monto Máximo con IVA Global: $${resumen.monto_max_con_iva_total.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
-${notaContexto}
+- Número de Dependencias Únicas: ${unicos("dependencia")}
+- Contratos únicos: ${unicos("no_contrato")}
+- Total de Unidades: ${sumar("unidades")}
+- Elementos Mínimos de Seguridad: ${sumar("operarios_min")}
+- Elementos Máximos de Seguridad: ${sumar("operarios_max")}
+- Monto Mínimo con IVA Global: ${dinero(sumar("monto_min_con_iva"))}
+- Monto Máximo con IVA Global: ${dinero(sumar("monto_max_con_iva"))}
+
+--- VALORES DISPONIBLES (para filtros) ---
+${Object.entries(disponibles).map(([d, v]) => `${d}: ${v.join(" | ") || "(sin datos)"}`).join("\n")}
+
+--- TABLAS POR DIMENSIÓN (totales ya calculados) ---
+POR DEPENDENCIA:
+${resumenPorDimension(filas, "dependencia")}
+POR ESTADO:
+${resumenPorDimension(filas, "estado")}
+POR EMPRESA:
+${resumenPorDimension(filas, "empresa")}
+POR ESTATUS:
+${resumenPorDimension(filas, "estatus")}
 
 --- MUESTRA DE FILAS ---
-${tablaTexto}
-
+${muestra.map((f) => JSON.stringify(f)).join("\n") || "(sin filas disponibles)"}
+${conversacion}
 --- PREGUNTA A RESPONDER ---
 Pregunta del usuario: ${pregunta}`;
 }
@@ -71,9 +92,9 @@ Pregunta del usuario: ${pregunta}`;
 // Si el principal falla y hay GEMINI_API_KEY, se usa Gemini como respaldo.
 // ---------------------------------------------------------------------------
 const PROVEEDORES_OPENAI = {
-  groq: { url: "https://api.groq.com/openai/v1/chat/completions", modelo: "llama-3.3-70b-versatile" },
+  groq: { url: "https://api.groq.com/openai/v1/chat/completions", modelo: "llama-3.3-70b-versatile", json: true },
   openrouter: { url: "https://openrouter.ai/api/v1/chat/completions", modelo: "meta-llama/llama-3.3-70b-instruct:free" },
-  mistral: { url: "https://api.mistral.ai/v1/chat/completions", modelo: "mistral-small-latest" },
+  mistral: { url: "https://api.mistral.ai/v1/chat/completions", modelo: "mistral-small-latest", json: true },
 };
 
 const REINTENTABLES = new Set([408, 429, 500, 502, 503, 504]);
@@ -88,30 +109,55 @@ class ErrorProveedor extends Error {
 }
 
 async function llamarOpenAI(cfg, apiKey, modelo, prompt) {
-  const r = await fetch(cfg.url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
-    body: JSON.stringify({ model: modelo, messages: [{ role: "user", content: prompt }], temperature: 0.3 }),
-    signal: AbortSignal.timeout(30000),
-  });
-  if (!r.ok) throw new ErrorProveedor(`${r.status}: ${await r.text()}`, r.status);
-  const datos = await r.json();
-  return datos?.choices?.[0]?.message?.content || "";
+  const pedir = async (conJson) => {
+    const r = await fetch(cfg.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: modelo,
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3,
+        ...(conJson ? { response_format: { type: "json_object" } } : {}),
+      }),
+      signal: AbortSignal.timeout(45000),
+    });
+    if (!r.ok) throw new ErrorProveedor(`${r.status}: ${await r.text()}`, r.status);
+    const datos = await r.json();
+    return datos?.choices?.[0]?.message?.content || "";
+  };
+  if (!cfg.json) return pedir(false);
+  try {
+    return await pedir(true);
+  } catch (e) {
+    if (e.estado === 400) return pedir(false); // el modelo no soportó el modo JSON: se intenta sin él
+    throw e;
+  }
 }
 
 async function llamarGemini(apiKey, modelo, prompt) {
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      signal: AbortSignal.timeout(30000),
-    }
-  );
-  if (!r.ok) throw new ErrorProveedor(`${r.status}: ${await r.text()}`, r.status);
-  const datos = await r.json();
-  return datos?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+  const pedir = async (conJson) => {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          ...(conJson ? { generationConfig: { responseMimeType: "application/json" } } : {}),
+        }),
+        signal: AbortSignal.timeout(45000),
+      }
+    );
+    if (!r.ok) throw new ErrorProveedor(`${r.status}: ${await r.text()}`, r.status);
+    const datos = await r.json();
+    return datos?.candidates?.[0]?.content?.parts?.map((p) => p.text).join("") || "";
+  };
+  try {
+    return await pedir(true);
+  } catch (e) {
+    if (e.estado === 400) return pedir(false);
+    throw e;
+  }
 }
 
 // Reintenta solo errores temporales (saturación, límites por minuto, red); 400/401/403/404 fallan de inmediato.
@@ -152,28 +198,37 @@ function proveedoresConfigurados() {
 
 router.post("/chat", requireAuth, requireRole("admin", "usuario"), async (req, res) => {
   const { pregunta } = req.body || {};
-  if (!pregunta || !pregunta.trim()) {
+  if (!pregunta || typeof pregunta !== "string" || !pregunta.trim()) {
     return res.status(400).json({ error: "Falta la pregunta." });
   }
+  if (pregunta.length > 1000) return res.status(400).json({ error: "La pregunta es demasiado larga (máx. 1,000 caracteres)." });
+
+  // Mensajes previos de la conversación (para preguntas de seguimiento como "¿y por estado?").
+  const historial = (Array.isArray(req.body.historial) ? req.body.historial : [])
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string" && m.content.trim())
+    .slice(-6)
+    .map((m) => ({ role: m.role, content: m.content.trim().slice(0, 1200) }));
 
   const proveedores = proveedoresConfigurados();
   if (!proveedores.length) {
     return res.status(200).json({
       desactivado: true,
       respuesta: "El asistente de IA está desactivado. Configura AI_PROVIDER y AI_API_KEY (o GEMINI_API_KEY) en backend/.env.",
+      graficas: [],
     });
   }
 
-  const prompt = await construirContexto(pregunta.trim());
+  const filas = (await query("select * from servicios order by id")).rows;
+  const prompt = await construirContexto(pregunta.trim(), historial, filas);
   let saturado = false;
 
   for (const prov of proveedores) {
     try {
       const texto = await conReintentos(prov.nombre, () => prov.ejecutar(prompt));
       if (!texto) {
-        return res.json({ respuesta: "La IA recibió los datos pero no generó texto. Intenta reformular tu pregunta." });
+        return res.json({ respuesta: "La IA recibió los datos pero no generó texto. Intenta reformular tu pregunta.", graficas: [] });
       }
-      return res.json({ respuesta: texto });
+      return res.json(interpretarSalida(texto, filas));
     } catch (e) {
       if (!e.estado || REINTENTABLES.has(e.estado)) saturado = true;
       console.error(`[IA:${prov.nombre}] sin respuesta, ${proveedores.at(-1) === prov ? "no hay más respaldos." : "probando el respaldo…"}`);

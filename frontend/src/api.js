@@ -35,7 +35,7 @@ export const api = {
   login: (usuario, password) => solicitud("/auth/login", json("POST", { usuario, password })),
   me: () => solicitud("/auth/me"),
   obtenerServicios: () => solicitud("/servicios"),
-  preguntarIA: (pregunta) => solicitud("/ai/chat", json("POST", { pregunta })),
+  preguntarIA: (pregunta, historial = []) => solicitud("/ai/chat", json("POST", { pregunta, historial })),
   obtenerArbolDrive: () => solicitud("/drive/tree"),
 
   // --- Tableros editables (facturacion | acuerdos) ---
